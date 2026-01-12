@@ -42,7 +42,17 @@ const TrustReplyApp: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  /* ================= API KEY CHECK (FIXED) ================= */
+  /* ================= THEME HANDLING ================= */
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+  }, [theme]);
+
+  /* ================= API KEY CHECK + DATA RESTORE ================= */
   useEffect(() => {
     const apiKey = import.meta.env.VITE_API_KEY;
 
@@ -54,23 +64,24 @@ const TrustReplyApp: React.FC = () => {
         .catch(() => setApiStatus('error'));
     }
 
+    // Restore ONLY form data (NOT step)
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         setDetails(parsed.details || details);
         setCustomContext(parsed.customContext || '');
-        setCurrentStep(parsed.currentStep || 1);
       } catch {}
     }
   }, []);
 
+  /* ================= SAVE FORM DATA ONLY ================= */
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ details, customContext, currentStep })
+      JSON.stringify({ details, customContext })
     );
-  }, [details, customContext, currentStep]);
+  }, [details, customContext]);
 
   /* ================= ACTIONS ================= */
 
@@ -113,12 +124,10 @@ const TrustReplyApp: React.FC = () => {
     doc.save(`Legal_Reply_${details.pan || 'Draft'}.pdf`);
   };
 
-  const isDark = theme === 'dark';
-
   /* ================= UI ================= */
 
   return (
-    <div className={isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
       <div className="max-w-6xl mx-auto p-10 font-sans">
 
         <header className="mb-12 flex justify-between items-center">
@@ -135,7 +144,7 @@ const TrustReplyApp: React.FC = () => {
             </span>
 
             <button
-              onClick={() => setTheme(isDark ? 'light' : 'dark')}
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               className="px-4 py-2 border rounded"
             >
               Toggle Theme
@@ -150,6 +159,7 @@ const TrustReplyApp: React.FC = () => {
           </div>
         )}
 
+        {/* STEP 1 – UPLOAD (STABLE) */}
         {currentStep === 1 && (
           <div className="text-center">
             <input
@@ -197,13 +207,18 @@ const TrustReplyApp: React.FC = () => {
 
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-10 py-6 bg-blue-600 text-white rounded text-2xl font-black"
+              disabled={apiStatus !== 'connected'}
+              className={`px-10 py-6 rounded text-2xl font-black
+                ${apiStatus === 'connected'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-400 text-slate-700 cursor-not-allowed'}`}
             >
               {isExtracting ? 'Extracting…' : 'Upload Official Notice'}
             </button>
           </div>
         )}
 
+        {/* STEP 3 – CONTEXT */}
         {currentStep === 3 && (
           <div className="text-center">
             <textarea
@@ -222,6 +237,7 @@ const TrustReplyApp: React.FC = () => {
           </div>
         )}
 
+        {/* STEP 4 – PREVIEW */}
         {currentStep === 4 && (
           <div>
             <textarea
@@ -247,6 +263,7 @@ const TrustReplyApp: React.FC = () => {
             </div>
           </div>
         )}
+
       </div>
     </div>
   );
