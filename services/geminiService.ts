@@ -1,183 +1,83 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import {
-  NoticeDetails,
-  NoticeType
-} from "../types";
+import { GoogleGenAI } from "@google/genai";
 
-/**
- * Diagnostic check to see if the API Key is valid
- * (Frontend-safe using import.meta.env)
- */
-export const testApiConnection = async (): Promise<boolean> => {
-  const apiKey = import.meta.env.VITE_API_KEY;
+const apiKey = import.meta.env.VITE_API_KEY;
 
-  if (!apiKey || apiKey === "YOUR_API_KEY") return false;
+if (!apiKey) {
+  console.warn("VITE_API_KEY not found");
+}
 
-  const ai = new GoogleGenAI({ apiKey });
+const ai = new GoogleGenAI({ apiKey });
 
+/* ---------- TEST CONNECTION ---------- */
+export async function testApiConnection(): Promise<boolean> {
   try {
     await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: "ping",
-      config: { maxOutputTokens: 1 }
+      model: "gemini-1.5-flash",
+      contents: [{ role: "user", parts: [{ text: "ping" }] }],
     });
     return true;
   } catch (e) {
-    console.error("API Diagnostic failed:", e);
+    console.error("API test failed", e);
     return false;
   }
-};
+}
 
-export const extractDataFromNotice = async (
+/* ---------- EXTRACT NOTICE DATA ---------- */
+export async function extractDataFromNotice(
   base64Data: string,
   mimeType: string
-) => {
-  const apiKey = import.meta.env.VITE_API_KEY;
-  if (!apiKey) throw new Error("API key not configured");
-
-  const ai = new GoogleGenAI({ apiKey });
-
-  const validMimeType =
-    mimeType ||
-    (base64Data.startsWith("JVBERi")
-      ? "application/pdf"
-      : "image/jpeg");
-
+): Promise<any> {
   const prompt = `
-Analyze this Income Tax notice (12A/80G).
-Extract details into a valid JSON object:
-- trustName: Legal name.
-- pan: 10-char PAN.
-- din: DIN/Notice Number.
-- date: Date in YYYY-MM-DD.
-- noticeType: "RULE_17A" (for 12A) or "RULE_11AA" (for 80G).
+Extract the following fields from this Income Tax notice.
+Return ONLY valid JSON.
+
+Fields:
+- trustName
+- pan
+- din
+- date (YYYY-MM-DD)
+- noticeType ("RULE_17A" or "RULE_11AA")
 `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: {
+  const response = await ai.models.generateContent({
+    model: "gemini-1.5-flash",
+    contents: [
+      {
+        role: "user",
         parts: [
-          { inlineData: { data: base64Data, mimeType: validMimeType } },
-          { text: prompt }
-        ]
+          { inlineData: { data: base64Data, mimeType } },
+          { text: prompt },
+        ],
       },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            trustName: { type: Type.STRING },
-            pan: { type: Type.STRING },
-            din: { type: Type.STRING },
-            date: { type: Type.STRING },
-            noticeType: { type: Type.STRING }
-          },
-          required: ["trustName", "pan", "din", "date", "noticeType"]
-        }
-      }
-    });
+    ],
+  });
 
-    return JSON.parse(response.text || "{}");
-  } catch (error) {
-    console.error("Extraction failed:", error);
-    throw error;
-  }
-};
+  const text = response.text || "{}";
+  console.log("Gemini raw response:", text);
 
-export const generateLegalReply = async (
-  details: NoticeDetails,
-  customContext: string = ""
-) => {
-  const apiKey = import.meta.env.VITE_API_KEY;
-  if (!apiKey) throw new Error("API key not configured");
+  return JSON.parse(text);
+}
 
-  const ai = new GoogleGenAI({ apiKey });
-
-  const rulesDraft = details.ruleResponses
-    .map(r => {
-      const ruleLabel =
-        details.noticeType === NoticeType.RULE_17A
-          ? `Rule 17A(2)(${r.rule})`
-          : `Rule 11AA(2)(${r.rule})`;
-      return `${ruleLabel}\n${r.text}`;
-    })
-    .join("\n\n");
-
-  const activityRows = details.activities
-    .filter(a => a.year || a.activity)
-    .map(
-      a => `FY ${a.year}: ${a.activity} (INR ${a.expenditure})`
-    )
-    .join("\n");
-
-  const csrNote =
-    details.noticeType === NoticeType.RULE_11AA
-      ? details.csrReceived
-        ? "The applicant trust has received CSR funds. Necessary documents like Form CSR-1, MOU with donor companies, and proof of activities conducted using CSR funds have been maintained and uploaded."
-        : "The applicant trust has not received any CSR funds during the relevant period. Accordingly, requirements related to CSR fund documentation are not applicable."
-      : "";
-
-  const noticeCode =
-    details.noticeType === NoticeType.RULE_17A ? "12A" : "80G";
-  const ruleCode =
-    details.noticeType === NoticeType.RULE_17A ? "17A" : "11AA";
-
+/* ---------- GENERATE LEGAL REPLY ---------- */
+export async function generateLegalReply(details: any, context: string) {
   const prompt = `
-Draft a formal Income Tax notice reply. Strictly plain text.
+Draft a professional Income Tax notice reply.
 
-HEADER LAYOUT:
-Line 1: ${details.trustName.toUpperCase()}
-Line 2: PAN: ${details.pan.toUpperCase()}
-
-ADDRESS BLOCK:
-To,
-The Commissioner of Income Tax (Exemptions)
-Income Tax Department
-
-REF DATA:
-Subject: Reply for ${noticeCode} Registration Notice (Submission under Rule ${ruleCode})
-Ref DIN: ${details.din}
+Trust Name: ${details.trustName}
+PAN: ${details.pan}
+DIN: ${details.din}
 Date: ${details.date}
 
-SALUTATION RULE:
-DO NOT USE ANY SALUTATION.
+Context:
+${context}
 
-BODY:
-The applicant trust submits point-wise responses as under:
-
-${rulesDraft}
-
-${details.noticeType === NoticeType.RULE_11AA ? `CSR STATUS:\n${csrNote}\n` : ""}
-
-FINANCIAL SUMMARY:
-${activityRows}
-
-PLEA:
-${customContext}
-
-CLOSING RULE:
-DO NOT use "Yours faithfully", "Sincerely", or "Regards".
-
-End exactly with:
-
-For ${details.trustName}
-Authorized Signatory
+Reply format: plain text only.
 `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
-      contents: prompt,
-      config: {
-        thinkingConfig: { thinkingBudget: 15000 },
-        temperature: 0.1
-      }
-    });
+  const response = await ai.models.generateContent({
+    model: "gemini-1.5-pro",
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+  });
 
-    return response.text;
-  } catch (error) {
-    console.error("Drafting failed:", error);
-    throw new Error("Drafting failed.");
-  }
-};
+  return response.text || "";
+}
