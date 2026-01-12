@@ -1,26 +1,36 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrustReply AI - Income Tax Notice Assistant</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Added jsPDF for formal document generation -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.35.0"
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrustReply AI - Income Tax Notice Assistant</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Font Awesome -->
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+  />
+
+  <!-- jsPDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- ✅ PRODUCTION IMPORT MAP (NO DEV WEBSOCKET) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@19.2.3?production",
+      "react-dom/client": "https://esm.sh/react-dom@19.2.3/client?production",
+      "react-dom/": "https://esm.sh/react-dom@19.2.3/?production",
+      "@google/genai": "https://esm.sh/@google/genai@1.35.0?production"
+    }
   }
-}
-</script>
+  </script>
+
 </head>
 <body class="bg-slate-950 min-h-screen text-slate-100 transition-colors duration-500">
-    <div id="root"></div>
+  <div id="root"></div>
 </body>
 </html>
