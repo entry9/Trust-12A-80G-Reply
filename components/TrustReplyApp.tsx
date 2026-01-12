@@ -1,12 +1,9 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { NoticeDetails, NoticeType, TrustType, ActivityDetail, RuleResponse, RegistrationAuthority, CreationDocument } from '../types';
 import { RULE_12A_DEFAULTS, RULE_80G_DEFAULTS } from '../constants';
-import { generateLegalReply, extractDataFromNotice } from '../services/geminiService';
+import { generateLegalReply, extractDataFromNotice, testApiConnection } from '../services/geminiService';
 
 const STORAGE_KEY = 'trustreply_final_deterministic_v12';
-
-// --- RIGID DETERMINISTIC SCENARIO MATRICES ---
 
 const SCENARIO_MATRIX_12A = {
   DEED_CHARITY: {
@@ -45,6 +42,7 @@ const SCENARIO_MATRIX_80G = {
 const TrustReplyApp: React.FC = () => {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [currentStep, setCurrentStep] = useState(1);
+  const [apiStatus, setApiStatus] = useState<'checking' | 'connected' | 'error' | 'missing'>('checking');
   const [details, setDetails] = useState<NoticeDetails>({
     trustName: '',
     pan: '',
@@ -66,6 +64,15 @@ const TrustReplyApp: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // API Connection Check
+    if (!process.env.API_KEY || process.env.API_KEY === 'YOUR_API_KEY') {
+      setApiStatus('missing');
+    } else {
+      testApiConnection()
+        .then(success => setApiStatus(success ? 'connected' : 'error'))
+        .catch(() => setApiStatus('error'));
+    }
+
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
@@ -163,6 +170,10 @@ const TrustReplyApp: React.FC = () => {
   };
 
   const handleGenerate = async () => {
+    if (apiStatus !== 'connected') {
+      alert("AI Service is not connected. Please check your API_KEY environment variable.");
+      return;
+    }
     setIsGenerating(true);
     setCurrentStep(4);
     try {
@@ -206,7 +217,18 @@ const TrustReplyApp: React.FC = () => {
             </div>
             <div>
               <h1 className="text-6xl font-black tracking-tighter text-blue-500">TrustReply AI</h1>
-              <p className="text-2xl font-bold text-slate-500 mt-2 uppercase tracking-[0.2em]">Scenario Logic Engine v6.2</p>
+              <div className="flex items-center gap-3 mt-2">
+                <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Logic Engine v6.2</p>
+                <div className="flex items-center gap-2 bg-slate-900/50 px-3 py-1 rounded-full border border-slate-800">
+                  <div className={`w-2 h-2 rounded-full animate-pulse ${
+                    apiStatus === 'connected' ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 
+                    apiStatus === 'missing' ? 'bg-red-500' : 'bg-yellow-500'
+                  }`}></div>
+                  <span className="text-[0.6rem] font-black uppercase tracking-tighter text-slate-400">
+                    AI Service: {apiStatus === 'connected' ? 'Connected' : apiStatus === 'missing' ? 'Config Required' : 'Checking...'}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
           <div className="flex gap-4">
@@ -216,6 +238,13 @@ const TrustReplyApp: React.FC = () => {
             </button>
           </div>
         </header>
+
+        {apiStatus === 'missing' && (
+          <div className="mb-10 p-6 bg-red-500/10 border border-red-500/30 rounded-3xl flex items-center gap-4 text-red-400">
+            <i className="fas fa-exclamation-triangle text-2xl"></i>
+            <p className="font-bold">API Key not detected. Please add <strong>API_KEY</strong> to your environment variables to enable AI features.</p>
+          </div>
+        )}
 
         <div className="mb-24 flex justify-between relative max-w-4xl mx-auto">
           <div className={`absolute top-1/2 left-0 w-full h-1 -translate-y-1/2 -z-10 ${isDark ? 'bg-slate-800' : 'bg-slate-200'}`}></div>
@@ -234,25 +263,31 @@ const TrustReplyApp: React.FC = () => {
               className="p-32 border-8 border-dashed rounded-[5rem] cursor-pointer hover:border-blue-500 transition-all group"
               onClick={() => fileInputRef.current?.click()}
             >
-              <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,image/*" onChange={async (e) => {
+              <input type="file" fileInputRef={fileInputRef} className="hidden" accept=".pdf,image/*" onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
+                if (apiStatus !== 'connected') { alert("Please configure API_KEY first."); return; }
                 setIsExtracting(true);
                 const reader = new FileReader();
                 reader.readAsDataURL(file);
                 reader.onload = async () => {
                   const base64 = (reader.result as string).split(',')[1];
-                  const extracted = await extractDataFromNotice(base64, file.type);
-                  setDetails(prev => ({
-                    ...prev,
-                    trustName: extracted.trustName || '',
-                    pan: (extracted.pan || '').toUpperCase(),
-                    din: extracted.din || '',
-                    date: extracted.date || '',
-                    noticeType: extracted.noticeType === 'RULE_17A' ? NoticeType.RULE_17A : NoticeType.RULE_11AA
-                  }));
-                  setIsExtracting(false);
-                  setCurrentStep(2);
+                  try {
+                    const extracted = await extractDataFromNotice(base64, file.type);
+                    setDetails(prev => ({
+                      ...prev,
+                      trustName: extracted.trustName || '',
+                      pan: (extracted.pan || '').toUpperCase(),
+                      din: extracted.din || '',
+                      date: extracted.date || '',
+                      noticeType: extracted.noticeType === 'RULE_17A' ? NoticeType.RULE_17A : NoticeType.RULE_11AA
+                    }));
+                    setCurrentStep(2);
+                  } catch (err) {
+                    alert("Extraction failed. Please check your API key.");
+                  } finally {
+                    setIsExtracting(false);
+                  }
                 };
               }} />
               <i className="fas fa-file-invoice text-9xl text-blue-500 mb-10 group-hover:scale-110 transition-transform"></i>
@@ -354,4 +389,68 @@ const TrustReplyApp: React.FC = () => {
                     </div>
                     <button 
                       onClick={() => deleteRuleResponse(r.id)} 
-                      className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-xl border border-red-
+                      className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-xl border border-red-500/20"
+                      title="Delete Clause"
+                    >
+                      <i className="fas fa-trash-alt"></i>
+                    </button>
+                  </div>
+                  <p className="mt-8 text-2xl leading-relaxed text-slate-300 italic font-black">"{r.text}"</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-14 bg-slate-900 rounded-[4.5rem] border-4 border-slate-800 shadow-3xl">
+               <h3 className="text-3xl font-black mb-6 flex items-center gap-4"><i className="fas fa-feather text-blue-500"></i> Final Context (Optional)</h3>
+               <textarea value={customContext} onChange={e => setCustomContext(e.target.value)} placeholder="E.g. Condone any delay in registration, or highlight specific community service mandates..." className="w-full p-8 rounded-[2.5rem] h-48 bg-slate-950 border-4 border-slate-800 font-black text-2xl outline-none focus:border-blue-600 transition-all placeholder:text-slate-700" />
+               <button onClick={handleGenerate} className="w-full mt-12 p-10 bg-blue-600 text-white rounded-[3.5rem] font-black text-5xl shadow-3xl transform hover:-translate-y-3 transition-all">DRAFT FINAL SUBMISSION</button>
+            </div>
+          </div>
+        )}
+
+        {currentStep === 4 && (
+          <div className="max-w-5xl mx-auto space-y-12">
+            <div className={`p-16 md:p-24 bg-white text-slate-900 rounded-[4rem] md:rounded-[6rem] min-h-[1100px] shadow-3xl flex flex-col border-[12px] border-slate-200 transition-all ${isGenerating ? 'opacity-50' : ''}`}>
+               {isGenerating ? (
+                 <div className="flex-1 flex flex-col items-center justify-center space-y-12">
+                    <div className="w-32 h-32 border-[16px] border-blue-600 border-t-transparent rounded-full animate-spin shadow-2xl"></div>
+                    <p className="text-5xl font-black text-blue-600 animate-pulse uppercase tracking-tighter">Drafting Submission...</p>
+                 </div>
+               ) : (
+                 <>
+                   <div className="mb-10 p-6 bg-blue-50 rounded-3xl border-4 border-blue-100 flex items-center gap-6">
+                      <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white text-2xl shadow-lg">
+                        <i className="fas fa-edit"></i>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-black text-blue-700 uppercase tracking-tight">Interactive Draft Preview</p>
+                        <p className="text-blue-500 font-bold text-sm uppercase tracking-widest">You can manually refine the text below before exporting to PDF</p>
+                      </div>
+                   </div>
+                   <textarea
+                     value={generatedReply}
+                     onChange={(e) => setGeneratedReply(e.target.value)}
+                     className="w-full flex-1 font-serif text-[1.6rem] md:text-[1.8rem] leading-[2.2] border-none outline-none resize-none bg-transparent text-slate-900 scrollbar-hide"
+                     spellCheck={false}
+                   />
+                 </>
+               )}
+            </div>
+            {!isGenerating && (
+              <div className="flex flex-col md:flex-row justify-center gap-8 pb-32">
+                 <button onClick={generatePDF} className="px-24 py-12 bg-blue-600 text-white rounded-[4rem] font-black text-4xl shadow-3xl hover:scale-105 transition-all flex items-center gap-6">
+                    <i className="fas fa-file-pdf"></i> CONVERT TO PDF
+                 </button>
+                 <button onClick={() => setCurrentStep(3)} className="px-14 py-12 bg-slate-800 text-white rounded-[4rem] font-black text-2xl border-4 border-slate-700">
+                    GO BACK TO LOGIC
+                 </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default TrustReplyApp;
