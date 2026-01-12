@@ -195,7 +195,7 @@ const TrustReplyApp: React.FC = () => {
                           ? NoticeType.RULE_17A
                           : NoticeType.RULE_11AA
                     }));
-                    setCurrentStep(2);
+                    setCurrentStep(3);
                   } catch {
                     alert('Extraction failed.');
                   } finally {
